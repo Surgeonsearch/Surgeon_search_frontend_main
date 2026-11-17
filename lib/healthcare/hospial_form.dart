@@ -1,0 +1,1351 @@
+import 'dart:io';
+import 'dart:convert';
+import 'package:logger/logger.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:get/get.dart';
+import 'package:iconsax/iconsax.dart';
+import 'package:doc/navbar.dart';
+import 'package:http/http.dart' as http;
+import 'package:doc/utils/session_manager.dart';
+import 'package:doc/utils/app_config.dart';
+import 'package:dropdown_search/dropdown_search.dart';
+
+import 'package:doc/model/indian_states_districts.dart';
+import 'package:doc/screens/signin_screen.dart';
+
+class HospitalForm extends StatefulWidget {
+  final String healthcareId;
+  final Map<String, dynamic>? existingData;
+  const HospitalForm({super.key, required this.healthcareId, this.existingData});
+
+  @override
+  State<HospitalForm> createState() => _HospitalFormState();
+}
+
+final _logger = Logger();
+
+// Inline helpers to avoid missing ApiService methods during build
+Future<Map<String, dynamic>> _addHealthcareProfile({
+  required String healthcareId,
+  required String hospitalName,
+  required String phoneNumber,
+  required String email,
+  required String state,
+  required String district,
+  required String facilityCategory,
+  String? hospitalType,
+  required List<String> departmentsAvailable,
+  required String hospitalOverview,
+  required Map<String, String> hrContact,
+  required String hospitalWebsite,
+  required bool termsAccepted,
+  File? logoFile,
+}) async {
+  try {
+    final uri = Uri.parse('${AppConfig.apiBaseUrl}/healthcare/add');
+
+    final req = http.MultipartRequest('POST', uri);
+
+    _logger.i('🏥 Creating hospital profile with healthcare_id: $healthcareId');
+
+    req.fields.addAll({
+      'hospitalName': hospitalName,
+      'phoneNumber': phoneNumber,
+      'email': email,
+      'state': state,
+      'district': district,
+      'facilityCategory': facilityCategory,
+      'hospitalOverview': hospitalOverview,
+      'hrContact[fullName]': hrContact['fullName'] ?? '',
+      'hrContact[designation]': hrContact['designation'] ?? '',
+      'hrContact[mobileNumber]': hrContact['mobileNumber'] ?? '',
+      'hrContact[email]': hrContact['email'] ?? '',
+      'hospitalWebsite': hospitalWebsite,
+      'termsAccepted': termsAccepted.toString(),
+      'healthcare_id': healthcareId,
+    });
+
+    if (hospitalType != null && hospitalType.isNotEmpty) {
+      req.fields['hospitalType'] = hospitalType;
+    }
+
+    for (int i = 0; i < departmentsAvailable.length; i++) {
+      req.fields['departmentsAvailable[$i]'] = departmentsAvailable[i];
+    }
+
+    if (logoFile != null) {
+      _logger.i('🏥 Adding hospital logo to create request: ${logoFile.path}');
+      req.files.add(await http.MultipartFile.fromPath('hospitalLogo', logoFile.path));
+    } else {
+      _logger.i('🏥 No logo file provided in create request');
+    }
+
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
+
+    final body = res.body;
+    final ct = res.headers['content-type'] ?? '';
+    final trimmed = body.trimLeft();
+    final isJson = ct.contains('application/json') || trimmed.startsWith('{') || trimmed.startsWith('[');
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      if (isJson) {
+        try {
+          return {'success': true, 'data': jsonDecode(body)};
+        } catch (_) {
+          return {'success': true, 'data': {'raw': body}};
+        }
+      } else {
+        return {'success': true, 'data': {'raw': body}};
+      }
+    }
+    if (isJson) {
+      try {
+        final err = jsonDecode(body);
+        return {'success': false, 'message': err['message'] ?? body};
+      } catch (_) {
+        return {'success': false, 'message': body};
+      }
+    }
+    final snippet = body.length > 200 ? body.substring(0, 200) : body;
+    return {'success': false, 'message': 'HTTP ${res.statusCode}: $snippet'};
+  } catch (e) {
+    return {'success': false, 'message': e.toString()};
+  }
+}
+
+Future<Map<String, dynamic>> _updateHealthcareProfile({
+  required String healthcareId,
+  required String hospitalName,
+  required String phoneNumber,
+  required String email,
+  required String state,
+  required String district,
+  required String facilityCategory,
+  String? hospitalType,
+  required List<String> departmentsAvailable,
+  required String hospitalOverview,
+  required Map<String, String> hrContact,
+  required String hospitalWebsite,
+  File? logoFile,
+}) async {
+  try {
+    // Use the edit endpoint provided by the user
+    // NOTE: Although the URL suggests an "edit" action and typically uses PUT, 
+    // some backends express updates via POST. The user explicitly requested ensuring
+    // the API call works, and sometimes "not found" issues are due to missing body parameters
+    // or method mismatches.
+    
+    // We will stick to PUT as per standard, BUT we MUST ensure 'healthcare_id' is 
+    // also sent IN THE BODY, as the backend likely looks for it there too.
+    // If PUT fails repeatedly, switching to POST might be the next debugging step,
+    // but first let's ensure the ID is in the body.
+    final uri = Uri.parse('${AppConfig.apiBaseUrl}/healthcare/edit/$healthcareId');
+
+    final req = http.MultipartRequest('PUT', uri);
+
+    _logger.i('🏥 Updating hospital profile for healthcare_id: $healthcareId');
+
+    req.fields.addAll({
+      'healthcare_id': healthcareId, // Explicitly adding this as requested
+      'hospitalName': hospitalName,
+      'phoneNumber': phoneNumber,
+      'email': email,
+      'state': state,
+      'district': district,
+      'facilityCategory': facilityCategory,
+      'hospitalOverview': hospitalOverview,
+      'hrContact[fullName]': hrContact['fullName'] ?? '',
+      'hrContact[designation]': hrContact['designation'] ?? '',
+      'hrContact[mobileNumber]': hrContact['mobileNumber'] ?? '',
+      'hrContact[email]': hrContact['email'] ?? '',
+      'hospitalWebsite': hospitalWebsite,
+    });
+
+    if (hospitalType != null && hospitalType.isNotEmpty) {
+      req.fields['hospitalType'] = hospitalType;
+    }
+
+    for (int i = 0; i < departmentsAvailable.length; i++) {
+      req.fields['departmentsAvailable[$i]'] = departmentsAvailable[i];
+    }
+
+    if (logoFile != null) {
+      _logger.i('🏥 Adding hospital logo to update request: ${logoFile.path}');
+      req.files.add(await http.MultipartFile.fromPath('hospitalLogo', logoFile.path));
+    } else {
+      _logger.i('🏥 No new logo file provided in update request (keeping existing logo)');
+    }
+
+    final streamed = await req.send();
+    final res = await http.Response.fromStream(streamed);
+
+    _logger.i('🏥 Update Response Status: ${res.statusCode}');
+    _logger.i('🏥 Update Response Headers: ${res.headers}');
+    _logger.d('🏥 Update Response Body: ${res.body}');
+
+    final body = res.body;
+    final ct = res.headers['content-type'] ?? '';
+    final trimmed = body.trimLeft();
+    final isJson = ct.contains('application/json') || trimmed.startsWith('{') || trimmed.startsWith('[');
+
+    if (res.statusCode == 200 || res.statusCode == 201) {
+      if (isJson) {
+        try {
+          final decoded = jsonDecode(body);
+          _logger.i('🏥 Update Success - Decoded Response: $decoded');
+          return {'success': true, 'data': decoded};
+        } catch (_) {
+          _logger.i('🏥 Update Success - Raw Response: $body');
+          return {'success': true, 'data': {'raw': body}};
+        }
+      } else {
+        _logger.i('🏥 Update Success - Non-JSON Response: $body');
+        return {'success': true, 'data': {'raw': body}};
+      }
+    }
+    if (isJson) {
+      try {
+        final err = jsonDecode(body);
+        _logger.w('🏥 Update Failed - Error Response: $err');
+        return {'success': false, 'message': err['message'] ?? body};
+      } catch (_) {
+        _logger.w('🏥 Update Failed - Raw Error: $body');
+        return {'success': false, 'message': body};
+      }
+    }
+    final snippet = body.length > 200 ? body.substring(0, 200) : body;
+    _logger.w('🏥 Update Failed - HTTP ${res.statusCode}: $snippet');
+    return {'success': false, 'message': 'HTTP ${res.statusCode}: $snippet'};
+  } catch (e) {
+    return {'success': false, 'message': e.toString()};
+  }
+}
+
+Future<Map<String, dynamic>> _fetchHealthcareProfile(String healthcareId) async {
+  try {
+    final url = Uri.parse('${AppConfig.apiBaseUrl}/healthcare/healthcare-profile/$healthcareId');
+
+    final res = await http.get(url);
+    final body = res.body;
+    final ct = res.headers['content-type'] ?? '';
+    final trimmed = body.trimLeft();
+    final isJson = ct.contains('application/json') || trimmed.startsWith('{') || trimmed.startsWith('[');
+    if (res.statusCode == 200) {
+      if (isJson) {
+        try {
+          return {'success': true, 'data': jsonDecode(body)};
+        } catch (_) {
+          return {'success': true, 'data': {'raw': body}};
+        }
+      } else {
+        return {'success': true, 'data': {'raw': body}};
+      }
+    }
+    if (isJson) {
+      try {
+        final err = jsonDecode(body);
+        return {'success': false, 'message': err['message'] ?? body};
+      } catch (_) {
+        return {'success': false, 'message': body};
+      }
+    }
+    final snippet = body.length > 200 ? body.substring(0, 200) : body;
+    return {'success': false, 'message': 'HTTP ${res.statusCode}: $snippet'};
+  } catch (e) {
+    return {'success': false, 'message': e.toString()};
+  }
+}
+
+class _HospitalFormState extends State<HospitalForm> {
+  final _formKey = GlobalKey<FormState>();
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.existingData != null) {
+      _prefillData();
+    } else {
+      _redirectIfProfileExists();
+      _autoPopulateEmail();
+    }
+  }
+
+  void _prefillData() {
+    final d = widget.existingData!;
+    _logger.d("🏥 HospitalForm: Prefilling data: $d");
+    
+    hospitalNameController.text = d['hospitalName']?.toString() ?? '';
+    phoneController.text = d['phoneNumber']?.toString() ?? '';
+    emailController.text = d['email']?.toString() ?? '';
+    overviewController.text = d['hospitalOverview']?.toString() ?? '';
+    websiteController.text = d['hospitalWebsite']?.toString() ?? '';
+    hospitalLogoUrl = d['hospitalLogo']?.toString();
+    
+    _logger.d("🏥 Hospital Name: ${hospitalNameController.text}");
+    _logger.d("🏥 Hospital Logo URL: $hospitalLogoUrl");
+    
+    // State and District prefill
+    final stateValue = d['state']?.toString() ?? '';
+    if (stateValue.isNotEmpty && IndianStatesAndDistricts.data.containsKey(stateValue)) {
+      selectedState = stateValue;
+      hospitalDistricts = IndianStatesAndDistricts.data[stateValue] ?? [];
+      
+      final districtValue = d['district']?.toString() ?? '';
+      if (districtValue.isNotEmpty && hospitalDistricts.contains(districtValue)) {
+        selectedDistrict = districtValue;
+      }
+    }
+    
+    // HR Contact
+    if (d['hrContact'] is Map) {
+      final hr = d['hrContact'];
+      hrNameController.text = hr['fullName']?.toString() ?? '';
+      hrDesignationController.text = hr['designation']?.toString() ?? '';
+      hrMobileController.text = hr['mobileNumber']?.toString() ?? '';
+      hrEmailController.text = hr['email']?.toString() ?? '';
+    }
+
+    // Dropdowns
+    if (d['facilityCategory'] != null && facilityCategories.contains(d['facilityCategory'])) {
+      selectedFacilityCategory = d['facilityCategory'];
+    }
+    if (d['hospitalType'] != null && hospitalSizes.contains(d['hospitalType'])) {
+      selectedHospitalSize = d['hospitalType'];
+    }
+
+    // Departments
+    if (d['departmentsAvailable'] is List) {
+      for (var dept in d['departmentsAvailable']) {
+        if (departments.contains(dept)) {
+          selectedDepartments.add(dept.toString());
+        }
+      }
+    }
+    
+    // Terms assumed accepted for existing profile
+    agreeTerms = true;
+    
+    // Trigger UI update
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _autoPopulateEmail() async {
+    final email = await SessionManager.getUserEmail();
+    if (email != null && email.isNotEmpty) {
+      if (mounted) {
+        setState(() {
+          emailController.text = email;
+        });
+      }
+    }
+  }
+
+  Future<void> _redirectIfProfileExists() async {
+    _logger.i('🏥 Checking if profile already exists for healthcareId: ${widget.healthcareId}');
+    
+    try {
+      // First, try the main ID lookup
+      final res = await _fetchHealthcareProfile(widget.healthcareId);
+      if (!mounted) return;
+      
+      if (res['success'] == true) {
+        final payload = res['data'];
+        final normalized = (payload is Map<String, dynamic>)
+            ? (payload['data'] is Map<String, dynamic> ? payload['data'] : payload)
+            : <String, dynamic>{};
+        
+        // Check if the profile has meaningful data (not just empty or minimal data)
+        final hasValidProfile = normalized.isNotEmpty && 
+            (normalized['hospitalName']?.toString().trim().isNotEmpty == true ||
+             normalized['email']?.toString().trim().isNotEmpty == true ||
+             normalized['phoneNumber']?.toString().trim().isNotEmpty == true);
+        
+        if (hasValidProfile) {
+          _logger.i('🏥 ✅ Valid profile found! Redirecting to dashboard');
+          _logger.d('🏥 Profile data: Hospital=${normalized['hospitalName']}, Email=${normalized['email']}');
+          
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(builder: (_) => Navbar(hospitalData: normalized)),
+          );
+          return; // Exit early
+        } else {
+          _logger.w('🏥 ⚠️ Profile exists but has no valid data');
+        }
+      } else {
+        _logger.w('🏥 ⚠️ Profile fetch failed with ID lookup');
+      }
+      
+      // If ID lookup failed, try email lookup as fallback
+      // Get user email from session
+      final userEmail = await SessionManager.getUserEmail();
+      if (userEmail != null && userEmail.isNotEmpty) {
+        _logger.i('🏥 Trying email-based profile lookup for: $userEmail');
+        
+        try {
+          final emailUrl = Uri.parse('${AppConfig.apiBaseUrl}/healthcare/healthcare-profile/email/$userEmail');
+
+          final emailResp = await http.get(emailUrl).timeout(const Duration(seconds: 10));
+          
+          if (emailResp.statusCode == 200) {
+            final emailBody = jsonDecode(emailResp.body);
+            final emailPayload = (emailBody is Map && emailBody['data'] != null) ? emailBody['data'] : emailBody;
+            final emailMapPayload = (emailPayload is Map<String, dynamic>) ? emailPayload : <String, dynamic>{};
+            
+            final hasValidEmailProfile = emailMapPayload.isNotEmpty && 
+                emailMapPayload['hospitalName']?.toString().trim().isNotEmpty == true;
+            
+            if (hasValidEmailProfile) {
+              _logger.i('🏥 ✅ Profile found by email! Redirecting to dashboard');
+              
+              if (!mounted) return;
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => Navbar(hospitalData: emailMapPayload)),
+              );
+              return; // Exit early
+            }
+          }
+        } catch (e) {
+          _logger.e('🏥 ⚠️ Email-based lookup failed: $e');
+        }
+      } else {
+        _logger.w('🏥 ⚠️ No user email in session for fallback lookup');
+      }
+      
+      // If we reach here, no existing profile was found
+      _logger.i('🏥 ℹ️ No existing profile found. User can fill the form.');
+      
+    } catch (e) {
+      _logger.e('🏥 ❌ Error during profile check: $e');
+      // Allow form to be shown if there's an error
+    }
+  }
+
+  // Controllers
+  final TextEditingController hospitalNameController = TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
+  final TextEditingController overviewController = TextEditingController();
+  final TextEditingController hrNameController = TextEditingController();
+  final TextEditingController hrDesignationController = TextEditingController();
+  final TextEditingController hrMobileController = TextEditingController();
+  final TextEditingController hrEmailController = TextEditingController();
+  final TextEditingController websiteController = TextEditingController();
+
+  // Dropdown & Selections
+  String? selectedFacilityCategory;
+  String? selectedHospitalSize;
+
+  File? hospitalLogo;
+  String? hospitalLogoUrl;
+  bool agreeTerms = false;
+  String searchQuery = ""; // For search functionality
+
+  // State and District for hospital location
+  String? selectedState;
+  String? selectedDistrict;
+  List<String> hospitalDistricts = [];
+
+  final List<String> facilityCategories = [
+    "Medical Colleges",
+    "Hospitals / Government-Aided Hospitals",
+    "Corporate",
+    "Group Practice",
+  ];
+
+  final List<String> hospitalSizes = [
+    "Small (< 50 beds)",
+    "Medium (50-100 beds)",
+    "Large (> 100 beds)",
+  ];
+
+  final List<String> departments = [
+    "Cardiology",
+    "Orthopedics",
+    "Surgical Oncology",
+    "Neurosurgery",
+    "Pediatric Surgery",
+    "Urology",
+    "General Medicine",
+    "ENT",
+    "Dermatology",
+    "Radiology",
+    "Gastroenterology",
+    "Interventionists",
+  ];
+
+  final List<String> selectedDepartments = [];
+
+  // Image Picker - Using Android's Photo Picker API for Google Play compliance
+  Future<void> pickImage() async {
+    try {
+      // Use ImagePicker which leverages Android's Photo Picker API (Android 13+)
+      // This is fully compliant with Google Play policies and doesn't require
+      // READ_EXTERNAL_STORAGE or READ_MEDIA_IMAGES permissions.
+      final ImagePicker picker = ImagePicker();
+      final XFile? pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 1024,
+        maxHeight: 1024,
+        imageQuality: 85, // Good quality for logos
+      );
+      
+      if (pickedFile != null) {
+        if (mounted) {
+          setState(() => hospitalLogo = File(pickedFile.path));
+        }
+      }
+    } catch (e) {
+      _logger.e("Error picking image: $e");
+      Get.snackbar(
+        "Error",
+        "Failed to pick image. Please try again.",
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  // Submit handler
+  void handleSubmit() async {
+    if (!_formKey.currentState!.validate()) return;
+    if (!agreeTerms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please agree to the terms first")),
+      );
+      return;
+    }
+
+    // Check if updating
+    if (widget.existingData != null) {
+      _handleUpdate();
+      return;
+    }
+
+    _logger.i('🏥 Submitting hospital profile with healthcare_id: ${widget.healthcareId}');
+
+    // Submit to backend (inline to avoid missing ApiService helpers)
+    final res = await _addHealthcareProfile(
+      healthcareId: widget.healthcareId,
+      hospitalName: hospitalNameController.text.trim(),
+      phoneNumber: phoneController.text.trim(),
+      email: emailController.text.trim(),
+      state: selectedState ?? '',
+      district: selectedDistrict ?? '',
+      facilityCategory: selectedFacilityCategory ?? '',
+      hospitalType: selectedHospitalSize,
+      departmentsAvailable: List<String>.from(selectedDepartments),
+      hospitalOverview: overviewController.text.trim(),
+      hrContact: {
+        'fullName': hrNameController.text.trim(),
+        'designation': hrDesignationController.text.trim(),
+        'mobileNumber': hrMobileController.text.trim(),
+        'email': hrEmailController.text.trim(),
+      },
+      hospitalWebsite: websiteController.text.trim(),
+      termsAccepted: agreeTerms,
+      logoFile: hospitalLogo,
+    );
+
+    if (!mounted) return;
+
+    _logger.i('🏥 Hospital profile creation response: ${res['success']}');
+    if (res['data'] != null) {
+      _logger.d('🏥 Response data: ${res['data']}');
+    }
+
+    if (res['success'] == true) {
+      // Extract the actual ID from backend response
+      // CRITICAL: Backend uses MongoDB _id as the primary identifier
+      // We must use this _id for all subsequent operations (job posting, etc.)
+      String finalHealthcareId = widget.healthcareId;
+      
+      if (res['data'] != null) {
+        final responseData = res['data'];
+        if (responseData is Map) {
+          // PRIORITY ORDER: healthcare_id > healthcareId > _id
+          // The edit API uses healthcare_id in the URL, NOT _id
+          // _id is the MongoDB document ID, but healthcare_id is the business identifier
+          final extractedId = responseData['healthcare_id'] ?? 
+                             responseData['healthcareId'] ??
+                             (responseData['data'] is Map ? 
+                               (responseData['data']['healthcare_id'] ?? 
+                                responseData['data']['healthcareId'] ??
+                                responseData['data']['_id']) : null) ??
+                             responseData['_id'];
+          
+          if (extractedId != null && extractedId.toString().trim().isNotEmpty) {
+            finalHealthcareId = extractedId.toString().trim();
+            _logger.i('🏥 ✅ Extracted healthcare_id from backend response: $extractedId');
+          } else {
+            _logger.w('🏥 ⚠️ No healthcare_id found in response, using original: $finalHealthcareId');
+          }
+        }
+      }
+
+      // Save this as the canonical healthcare_id for all future operations
+      await SessionManager.saveHealthcareId(finalHealthcareId);
+      _logger.i('🏥 💾 Saved healthcare_id to session: $finalHealthcareId');
+
+      // 🔥 CRITICAL: Save email→profile_id mapping for future logins
+      // This allows us to find the profile even with backend ID mismatch
+      final userEmail = emailController.text.trim();
+      await SessionManager.saveUserProfileMapping(userEmail, finalHealthcareId);
+      _logger.i('🏥 💾 Saved profile mapping: $userEmail → $finalHealthcareId');
+
+      // Skip fetching profile immediately to avoid consistency delays.
+      // We have the ID and the data we just submitted.
+      
+      Map<String, dynamic> finalHospitalData = {};
+      
+      // Try to use returned data
+      if (res['data'] is Map) {
+         final payload = res['data'];
+         final normalized = (payload['data'] is Map ? payload['data'] : payload);
+         if (normalized is Map) {
+           finalHospitalData = Map<String, dynamic>.from(normalized);
+         }
+      }
+      
+      // Ensure essential fields are present (fallback to form inputs)
+      finalHospitalData['healthcare_id'] = finalHealthcareId;
+      if (finalHospitalData['hospitalName'] == null || finalHospitalData['hospitalName'].toString().isEmpty) {
+        finalHospitalData['hospitalName'] = hospitalNameController.text.trim();
+      }
+      if (finalHospitalData['email'] == null || finalHospitalData['email'].toString().isEmpty) {
+        finalHospitalData['email'] = emailController.text.trim();
+      }
+      if (finalHospitalData['state'] == null || finalHospitalData['state'].toString().isEmpty) {
+        finalHospitalData['state'] = selectedState ?? '';
+      }
+      if (finalHospitalData['district'] == null || finalHospitalData['district'].toString().isEmpty) {
+        finalHospitalData['district'] = selectedDistrict ?? '';
+      }
+      // Include logo URL if returned by backend
+      if (finalHospitalData['hospitalLogo'] == null || finalHospitalData['hospitalLogo'].toString().isEmpty) {
+        // Try to get logo from response
+        if (res['data'] is Map) {
+          final logoFromResponse = res['data']['hospitalLogo'] ?? 
+                                   (res['data']['data'] is Map ? res['data']['data']['hospitalLogo'] : null);
+          if (logoFromResponse != null) {
+            finalHospitalData['hospitalLogo'] = logoFromResponse.toString();
+          }
+        }
+      }
+      
+      _logger.d('🏥 Final hospital data for navigation: $finalHospitalData');
+      
+      _logger.i('🏥 Navigating to Navbar with healthcare_id: $finalHealthcareId');
+
+      if (!mounted) return;
+
+      // Bypassing HospitalFreeTrialScreen
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => Navbar(hospitalData: finalHospitalData),
+        ),
+      );
+    } else {
+      Get.snackbar(
+        'Submit Failed', 
+        res['message']?.toString() ?? 'Error creating hospital profile',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  void _handleUpdate() async {
+    // Determine the best ID to use for the update
+    // Backend developer says use healthcare_id in URL: PUT /api/healthcare/edit/{healthcare_id}
+    String idToUse = widget.healthcareId;
+    
+    if (widget.existingData != null) {
+      // Priority: healthcare_id > _id > id (backend uses healthcare_id)
+      if (widget.existingData!.containsKey('healthcare_id') && 
+          widget.existingData!['healthcare_id'] != null &&
+          widget.existingData!['healthcare_id'].toString().isNotEmpty) {
+        idToUse = widget.existingData!['healthcare_id'].toString();
+      } else if (widget.existingData!.containsKey('_id') && 
+          widget.existingData!['_id'] != null &&
+          widget.existingData!['_id'].toString().isNotEmpty) {
+        idToUse = widget.existingData!['_id'].toString();
+      } else if (widget.existingData!.containsKey('id') && 
+          widget.existingData!['id'] != null &&
+          widget.existingData!['id'].toString().isNotEmpty) {
+        idToUse = widget.existingData!['id'].toString();
+      }
+    }
+
+    _logger.i('🏥 Updating hospital profile using ID: $idToUse');
+    _logger.d('🏥 Widget healthcare_id: ${widget.healthcareId}');
+    _logger.d('🏥 _id from existingData: ${widget.existingData?['_id']}');
+    _logger.d('🏥 healthcare_id from existingData: ${widget.existingData?['healthcare_id']}');
+    _logger.d('🏥 Logo file to upload: ${hospitalLogo != null ? hospitalLogo!.path : "No new logo selected"}');
+    _logger.d('🏥 Existing logo URL: $hospitalLogoUrl');
+
+    final res = await _updateHealthcareProfile(
+      healthcareId: idToUse,
+      hospitalName: hospitalNameController.text.trim(),
+      phoneNumber: phoneController.text.trim(),
+      email: emailController.text.trim(),
+      state: selectedState ?? '',
+      district: selectedDistrict ?? '',
+      facilityCategory: selectedFacilityCategory ?? '',
+      hospitalType: selectedHospitalSize,
+      departmentsAvailable: List<String>.from(selectedDepartments),
+      hospitalOverview: overviewController.text.trim(),
+      hrContact: {
+        'fullName': hrNameController.text.trim(),
+        'designation': hrDesignationController.text.trim(),
+        'mobileNumber': hrMobileController.text.trim(),
+        'email': hrEmailController.text.trim(),
+      },
+      hospitalWebsite: websiteController.text.trim(),
+      logoFile: hospitalLogo,
+    );
+
+    if (!mounted) return;
+
+    if (res['success'] == true) {
+      _logger.i('🏥 ✅ Profile update successful!');
+      
+      // Fetch the updated profile to get the new logo URL
+      try {
+        final fetchRes = await _fetchHealthcareProfile(idToUse);
+        if (fetchRes['success'] == true && fetchRes['data'] != null) {
+          final updatedData = fetchRes['data'] is Map ? fetchRes['data'] : {};
+          _logger.i('🏥 Updated logo URL: ${updatedData['hospitalLogo']}');
+        }
+      } catch (e) {
+        _logger.e('🏥 ⚠️ Could not fetch updated profile: $e');
+      }
+      
+      if (!mounted) return;
+      
+      Get.snackbar(
+        'Success', 
+        'Profile updated successfully',
+        backgroundColor: Colors.green,
+        colorText: Colors.white,
+      );
+      Navigator.pop(context, true); // Go back to profile with refresh signal
+    } else {
+      _logger.e('🏥 ❌ Profile update failed: ${res['message']}');
+      Get.snackbar(
+        'Update Failed', 
+        res['message']?.toString() ?? 'Error updating profile',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final labelStyle = GoogleFonts.poppins(
+      fontWeight: FontWeight.w500,
+      color: Colors.black,
+    );
+
+    InputDecoration fieldDecoration(String hint, IconData? icon) {
+      return InputDecoration(
+        prefixIcon: icon != null ? Icon(icon, size: 18) : null,
+        hintText: hint,
+        hintStyle: GoogleFonts.poppins(color: Colors.grey),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Colors.grey),
+        ),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 14,
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.white,
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.black),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              Navigator.pushReplacement(
+                context,
+                MaterialPageRoute(builder: (_) => LoginScreen()),
+              );
+            }
+          },
+        ),
+        title: Text.rich(
+          TextSpan(
+            text: "Hospital ",
+            style: GoogleFonts.poppins(
+              color: Colors.black,
+              fontSize: 20,
+              fontWeight: FontWeight.w400,
+            ),
+            children: [
+              TextSpan(
+                text: "profile",
+                style: GoogleFonts.poppins(fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+        ),
+      ),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
+        child: Form(
+          key: _formKey,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                "Connect with top surgeons and grow your medical team.",
+                style: GoogleFonts.poppins(fontSize: 13, color: Colors.black54),
+              ),
+              const SizedBox(height: 20),
+
+              // Hospital Name
+              Text("Hospital Name", style: labelStyle),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: hospitalNameController,
+                decoration: fieldDecoration(
+                  "Enter your hospital's name",
+                  Iconsax.hospital,
+                ),
+                validator: (v) =>
+                    v!.isEmpty ? "Please enter hospital name" : null,
+              ),
+              const SizedBox(height: 15),
+
+              // Phone Number
+              Text("Phone number", style: labelStyle),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: phoneController,
+                keyboardType: TextInputType.phone,
+                decoration: fieldDecoration(
+                  "Official contact number",
+                  Iconsax.call,
+                ),
+                validator: (v) =>
+                    v!.isEmpty ? "Please enter phone number" : null,
+              ),
+              const SizedBox(height: 15),
+
+              // Email
+              Text("Email Address", style: labelStyle),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: emailController,
+                keyboardType: TextInputType.emailAddress,
+                decoration: fieldDecoration(
+                  "HR or recruitment email",
+                  Iconsax.sms,
+                ),
+                validator: (v) => v!.isEmpty ? "Please enter email" : null,
+              ),
+              const SizedBox(height: 15),
+
+              // State
+              Text("State", style: labelStyle),
+              const SizedBox(height: 8),
+              DropdownSearch<String>(
+                popupProps: const PopupProps.menu(
+                  showSearchBox: true,
+                  searchFieldProps: TextFieldProps(
+                    decoration: InputDecoration(
+                      hintText: "Search State",
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                items: IndianStatesAndDistricts.data.keys.toList(),
+                dropdownDecoratorProps: DropDownDecoratorProps(
+                  dropdownSearchDecoration: InputDecoration(
+                    hintText: "Select State",
+                    prefixIcon: const Icon(Iconsax.location, size: 18),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 14,
+                      horizontal: 12,
+                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.grey),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF4AB3F4)),
+                    ),
+                  ),
+                ),
+                selectedItem: selectedState,
+                onChanged: (value) {
+                  setState(() {
+                    selectedState = value;
+                    hospitalDistricts = IndianStatesAndDistricts.data[value] ?? [];
+                    selectedDistrict = null; // Reset district when state changes
+                  });
+                },
+              ),
+              const SizedBox(height: 15),
+
+              // District
+              Text("District", style: labelStyle),
+              const SizedBox(height: 8),
+              DropdownSearch<String>(
+                popupProps: const PopupProps.menu(
+                  showSearchBox: true,
+                  searchFieldProps: TextFieldProps(
+                    decoration: InputDecoration(
+                      hintText: "Search District",
+                      contentPadding: EdgeInsets.symmetric(horizontal: 12),
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                ),
+                items: hospitalDistricts,
+                dropdownDecoratorProps: DropDownDecoratorProps(
+                  dropdownSearchDecoration: InputDecoration(
+                    hintText: "Select District",
+                    prefixIcon: const Icon(Iconsax.map, size: 18),
+                    filled: true,
+                    fillColor: Colors.white,
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 14,
+                      horizontal: 12,
+                    ),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Colors.grey),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: const BorderSide(color: Color(0xFF4AB3F4)),
+                    ),
+                  ),
+                ),
+                selectedItem: selectedDistrict,
+                enabled: selectedState != null, // Disable if no state selected
+                onChanged: (value) {
+                  setState(() {
+                    selectedDistrict = value;
+                  });
+                },
+              ),
+              const SizedBox(height: 15),
+
+              // Upload Logo
+              Text("Upload Hospital Logo", style: labelStyle),
+              const SizedBox(height: 8),
+              hospitalLogo != null
+                  ? Center(
+                      child: Stack(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.file(
+                              hospitalLogo!,
+                              width: 120,
+                              height: 120,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                          Positioned(
+                            top: 5,
+                            right: 5,
+                            child: GestureDetector(
+                              onTap: () {
+                                setState(() {
+                                  hospitalLogo = null;
+                                });
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: const BoxDecoration(
+                                  color: Colors.red,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(Icons.close,
+                                    color: Colors.white, size: 16),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : (hospitalLogoUrl != null && hospitalLogoUrl!.isNotEmpty
+                      ? Center(
+                          child: Column(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(12),
+                                child: Image.network(
+                                  hospitalLogoUrl!,
+                                  width: 120,
+                                  height: 120,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stackTrace) =>
+                                      const Icon(Iconsax.image, size: 50, color: Colors.grey),
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              TextButton(
+                                onPressed: pickImage,
+                                child: const Text("Change Logo"),
+                              )
+                            ],
+                          ),
+                        )
+                      : SizedBox(
+                          height: 45,
+                          child: OutlinedButton.icon(
+                            onPressed: pickImage,
+                            icon: const Icon(Icons.upload_file),
+                            label: Text(
+                              "Upload your image",
+                              style: GoogleFonts.poppins(fontSize: 14),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              side: const BorderSide(color: Colors.grey),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                          ),
+                        )),
+              const SizedBox(height: 15),
+
+              // 🏥 Facility Category Dropdown
+              Text("Facility Category", style: labelStyle),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 15),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FB),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.grey.withValues(alpha: 0.1),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedFacilityCategory,
+                    icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                    dropdownColor: Colors.white,
+                    hint: Text(
+                      "Select Category",
+                      style: GoogleFonts.poppins(
+                        color: Colors.grey,
+                        fontSize: 14,
+                      ),
+                    ),
+                    onChanged: (val) {
+                      setState(() {
+                        selectedFacilityCategory = val;
+                        // Reset sub-dropdown if category changes
+                        if (val != "Hospitals / Government-Aided Hospitals") {
+                          selectedHospitalSize = null;
+                        }
+                      });
+                    },
+                    items: facilityCategories
+                        .map(
+                          (type) => DropdownMenuItem(
+                            value: type,
+                            child: Text(
+                              type,
+                              style: GoogleFonts.poppins(
+                                color: Colors.black,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 15),
+
+              // 🏥 Hospital Size Dropdown (Conditional)
+              if (selectedFacilityCategory == "Hospitals / Government-Aided Hospitals") ...[
+                Text("Hospital Type (Bed Count)", style: labelStyle),
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 15),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8F9FB),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.blue.withValues(alpha: 0.1),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                    border: Border.all(color: Colors.grey.shade300),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: selectedHospitalSize,
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                      dropdownColor: Colors.white,
+                      hint: Text(
+                        "Select Size",
+                        style: GoogleFonts.poppins(
+                          color: Colors.grey,
+                          fontSize: 14,
+                        ),
+                      ),
+                      onChanged: (val) {
+                        setState(() => selectedHospitalSize = val);
+                      },
+                      items: hospitalSizes
+                          .map(
+                            (size) => DropdownMenuItem(
+                              value: size,
+                              child: Text(
+                                size,
+                                style: GoogleFonts.poppins(
+                                  color: Colors.black,
+                                  fontSize: 14,
+                                ),
+                              ),
+                            ),
+                          )
+                          .toList(),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 15),
+              ],
+              const SizedBox(height: 15),
+
+              // 🧠 Departments (Search + Select)
+              Text("Departments Available", style: labelStyle),
+              const SizedBox(height: 8),
+              Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8F9FB),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: TextField(
+                  onChanged: (value) =>
+                      setState(() => searchQuery = value.toLowerCase()),
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.search, size: 20),
+                    hintText: "Departments",
+                    hintStyle: GoogleFonts.poppins(color: Colors.grey),
+                    border: InputBorder.none,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 15,
+                      vertical: 12,
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                height: 200,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade300),
+                ),
+                child: ListView(
+                  children: departments
+                      .where((dept) => dept.toLowerCase().contains(searchQuery))
+                      .map((dept) {
+                        final isSelected = selectedDepartments.contains(dept);
+                        return CheckboxListTile(
+                          dense: true,
+                          activeColor: Colors.blue,
+                          title: Text(
+                            dept,
+                            style: GoogleFonts.poppins(
+                              fontSize: 13,
+                              color: isSelected
+                                  ? Colors.black
+                                  : Colors.grey[800],
+                            ),
+                          ),
+                          value: isSelected,
+                          onChanged: (val) {
+                            setState(() {
+                              if (val == true) {
+                                selectedDepartments.add(dept);
+                              } else {
+                                selectedDepartments.remove(dept);
+                              }
+                            });
+                          },
+                        );
+                      })
+                      .toList(),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Overview
+              Text("Hospital Overview", style: labelStyle),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: overviewController,
+                maxLines: 5,
+                decoration: fieldDecoration(
+                  "Brief description about the hospital",
+                  null,
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // HR Contact
+              Text("HR Contact Person Details", style: labelStyle),
+              const SizedBox(height: 8),
+              _contactField("Full Name", hrNameController),
+              _contactField("Designation", hrDesignationController),
+              _contactField("Mobile Number", hrMobileController),
+              _contactField("Email Address", hrEmailController),
+              const SizedBox(height: 10),
+
+              // Website
+              Text("Hospital Website", style: labelStyle),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: websiteController,
+                decoration: fieldDecoration("Website", Iconsax.link),
+              ),
+              const SizedBox(height: 10),
+
+              // Terms Checkbox
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    height: 24,
+                    width: 24,
+                    child: Checkbox(
+                      value: agreeTerms,
+                      onChanged: (v) => setState(() => agreeTerms = v!),
+                      activeColor: Colors.blue,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text.rich(
+                      TextSpan(
+                        style: GoogleFonts.poppins(fontSize: 12, color: Colors.black),
+                        children: [
+                          const TextSpan(text: "I agree to the "),
+                          TextSpan(
+                            text: "terms & conditions",
+                            style: GoogleFonts.poppins(
+                              color: Colors.blue,
+                              decoration: TextDecoration.underline,
+                            ),
+                            recognizer: TapGestureRecognizer()
+                              ..onTap = () async {
+                                final Uri url = Uri.parse('https://surgeonsearch.in/terms-conditions/');
+                                if (await canLaunchUrl(url)) {
+                                  await launchUrl(url);
+                                }
+                              },
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 25),
+
+            ],
+          ),
+        ),
+      ),
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -5),
+              ),
+            ],
+          ),
+          child: SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: handleSubmit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFFADE1FF),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              child: Text(
+                "Submit",
+                style: GoogleFonts.poppins(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _contactField(String hint, TextEditingController controller) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: TextFormField(
+        controller: controller,
+        decoration: InputDecoration(
+          hintText: hint,
+          hintStyle: GoogleFonts.poppins(color: Colors.grey),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 15,
+            vertical: 14,
+          ),
+        ),
+      ),
+    );
+  }
+}

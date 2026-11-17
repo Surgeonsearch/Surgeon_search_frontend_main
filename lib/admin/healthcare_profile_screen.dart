@@ -1,0 +1,978 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:doc/utils/app_config.dart';
+
+
+/// HealthcareProfileScreen displays detailed information about a hospital/healthcare.
+class HealthcareProfileScreen extends StatefulWidget {
+  final String healthcareId;
+  final Map<String, dynamic>? initialData;
+
+  const HealthcareProfileScreen({
+    super.key,
+    required this.healthcareId,
+    this.initialData,
+  });
+
+  @override
+  State<HealthcareProfileScreen> createState() => _HealthcareProfileScreenState();
+}
+
+class _HealthcareProfileScreenState extends State<HealthcareProfileScreen> {
+  bool _isLoading = true;
+  bool _isUpdatingKYC = false;
+  bool _isUpdatingPayment = false;
+  Map<String, dynamic> _profileData = {};
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialData != null) {
+      _profileData = Map<String, dynamic>.from(widget.initialData!);
+    }
+    _loadProfileDetails();
+  }
+
+  Future<void> _loadProfileDetails() async {
+    setState(() => _isLoading = true);
+
+    try {
+      final url = Uri.parse(
+          '${AppConfig.apiBaseUrl}/healthcare/healthcare-profile/${widget.healthcareId}');
+
+      final response = await http.get(url).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final data = body['data'] ?? body['profile'] ?? body;
+
+        setState(() {
+          if (data is Map) {
+            _profileData = Map<String, dynamic>.from(data);
+          }
+          _isLoading = false;
+          _errorMessage = null;
+        });
+      } else {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Failed to load hospital profile';
+        });
+      }
+    } catch (e) {
+      debugPrint('Error loading profile: $e');
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'Error loading profile: $e';
+      });
+    }
+  }
+
+  Future<void> _updateKYCStatus(bool newStatus) async {
+    setState(() => _isUpdatingKYC = true);
+
+    try {
+      final url = Uri.parse(
+          '${AppConfig.apiBaseUrl}/healthcare/edit/${widget.healthcareId}');
+
+      
+      final response = await http.put(
+        url,
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: {'isKYCVerified': newStatus.toString()},
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        setState(() {
+          _profileData['isKYCVerified'] = newStatus;
+          _isUpdatingKYC = false;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(newStatus 
+                  ? '✅ KYC Verified Successfully' 
+                  : '⚠️ KYC Verification Removed'),
+              backgroundColor: newStatus ? Colors.green : Colors.orange,
+            ),
+          );
+        }
+      } else {
+        setState(() => _isUpdatingKYC = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to update KYC status'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Error updating KYC: $e');
+      setState(() => _isUpdatingKYC = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showKYCEditDialog() {
+    final isCurrentlyVerified = _profileData['isKYCVerified'] == true;
+    
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        padding: const EdgeInsets.all(24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.only(
+            topLeft: Radius.circular(24),
+            topRight: Radius.circular(24),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Handle
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Icon
+            Container(
+              width: 70,
+              height: 70,
+              decoration: BoxDecoration(
+                color: isCurrentlyVerified 
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : Colors.orange.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                isCurrentlyVerified ? Icons.verified : Icons.pending,
+                size: 35,
+                color: isCurrentlyVerified ? Colors.green : Colors.orange,
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Title
+            const Text(
+              'KYC Verification Status',
+              style: TextStyle(
+                fontSize: 20,
+                fontWeight: FontWeight.bold,
+                color: Color(0xFF1E3A5F),
+              ),
+            ),
+            const SizedBox(height: 12),
+            // Current Status
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              decoration: BoxDecoration(
+                color: isCurrentlyVerified 
+                    ? Colors.green.withValues(alpha: 0.1)
+                    : Colors.orange.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isCurrentlyVerified ? Icons.check_circle : Icons.warning,
+                    size: 18,
+                    color: isCurrentlyVerified ? Colors.green : Colors.orange,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isCurrentlyVerified ? 'Currently Verified' : 'Not Verified',
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: isCurrentlyVerified ? Colors.green : Colors.orange,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 24),
+            // Action Buttons
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.pop(context),
+                    style: OutlinedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      side: BorderSide(color: Colors.grey.shade300),
+                    ),
+                    child: const Text(
+                      'Cancel',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _isUpdatingKYC
+                        ? null
+                        : () {
+                            Navigator.pop(context);
+                            _updateKYCStatus(!isCurrentlyVerified);
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: isCurrentlyVerified 
+                          ? Colors.orange 
+                          : Colors.green,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: Text(
+                      isCurrentlyVerified ? 'Remove Verification' : 'Verify KYC',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _collectPayment() async {
+    setState(() => _isUpdatingPayment = true);
+
+    try {
+      final url = Uri.parse(
+          '${AppConfig.apiBaseUrl}/admin/healthcare/${widget.healthcareId}/collect-payment');
+
+      final response = await http.post(
+        url,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'amount': 1500}),
+      ).timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        final body = jsonDecode(response.body);
+        final sub = body['subscription'];
+        setState(() {
+          _profileData['isSubscribed'] = true;
+          _profileData['paymentAmount'] = 1500;
+          if (sub != null) {
+            _profileData['subscriptionStartDate'] = sub['startDate'];
+            _profileData['subscriptionEndDate'] = sub['endDate'];
+          }
+          _isUpdatingPayment = false;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Payment of ₹1500 collected & Account Activated for 1 Month!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        // Fallback to edit endpoint
+        final fallbackUrl = Uri.parse(
+            '${AppConfig.apiBaseUrl}/healthcare/edit/${widget.healthcareId}');
+        final fallbackResp = await http.put(
+          fallbackUrl,
+          headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+          body: {'activateSubscription': 'true'},
+        ).timeout(const Duration(seconds: 15));
+
+        setState(() => _isUpdatingPayment = false);
+        if (fallbackResp.statusCode == 200) {
+          setState(() {
+            _profileData['isSubscribed'] = true;
+            _profileData['paymentAmount'] = 1500;
+            _profileData['subscriptionEndDate'] = DateTime.now().add(const Duration(days: 30)).toIso8601String();
+          });
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('✅ Payment collected & Account Activated for 1 Month!'),
+                backgroundColor: Colors.green,
+              ),
+            );
+          }
+        } else {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('Failed to record payment'),
+                backgroundColor: Colors.red,
+              ),
+            );
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error collecting payment: $e');
+      setState(() => _isUpdatingPayment = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  void _showCollectPaymentDialog() {
+    final hospitalName = _profileData['hospitalName'] ?? _profileData['name'] ?? 'this hospital';
+    final isSubscribed = _profileData['isSubscribed'] == true;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: const [
+            Icon(Icons.payments_outlined, color: Color(0xFF2E7D32)),
+            SizedBox(width: 8),
+            Text('Collect ₹1500 Payment'),
+          ],
+        ),
+        content: Text(
+          isSubscribed
+              ? 'This hospital currently has an active subscription. Do you want to collect payment of ₹1500 and extend their activation for another 1 month?'
+              : 'Confirm collection of ₹1500 from $hospitalName?\n\nThis will activate their account for 1 month to post jobs and recruit surgeons.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Cancel', style: TextStyle(color: Colors.grey)),
+          ),
+          ElevatedButton(
+            onPressed: _isUpdatingPayment
+                ? null
+                : () {
+                    Navigator.pop(ctx);
+                    _collectPayment();
+                  },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2E7D32),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            child: const Text('Confirm & Activate', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      body: CustomScrollView(
+        slivers: [
+          // Custom App Bar with Profile Header
+          SliverAppBar(
+            expandedHeight: 320,
+            pinned: true,
+            backgroundColor: const Color(0xFF2E7D32),
+            leading: IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.2),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.arrow_back_ios_new,
+                  color: Colors.white,
+                  size: 18,
+                ),
+              ),
+            ),
+            actions: [
+              // Edit KYC Button
+              IconButton(
+                onPressed: _showKYCEditDialog,
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: _isUpdatingKYC
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.edit,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                ),
+              ),
+              IconButton(
+                onPressed: _loadProfileDetails,
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: const Icon(
+                    Icons.refresh,
+                    color: Colors.white,
+                    size: 20,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+            ],
+            flexibleSpace: FlexibleSpaceBar(
+              background: _buildProfileHeader(),
+            ),
+          ),
+          // Content
+          SliverToBoxAdapter(
+            child: _isLoading && _profileData.isEmpty
+                ? const Padding(
+                    padding: EdgeInsets.all(50),
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF2E7D32),
+                      ),
+                    ),
+                  )
+                : _errorMessage != null && _profileData.isEmpty
+                    ? _buildErrorState()
+                    : _buildProfileDetails(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildProfileHeader() {
+    final name = _profileData['hospitalName'] ?? _profileData['name'] ?? 'Loading...';
+    final category = _profileData['facilityCategory'] ?? '';
+    final logo = _profileData['hospitalLogo'] ?? '';
+    final isKYCVerified = _profileData['isKYCVerified'] == true;
+
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFF2E7D32),
+            Color(0xFF43A047),
+            Color(0xFF66BB6A),
+          ],
+        ),
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(height: 40),
+            // Hospital Logo
+            Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.5),
+                  width: 3,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.2),
+                    blurRadius: 15,
+                    offset: const Offset(0, 5),
+                  ),
+                ],
+                image: logo.isNotEmpty
+                    ? DecorationImage(
+                        image: NetworkImage(logo),
+                        fit: BoxFit.cover,
+                        onError: (_, __) {},
+                      )
+                    : null,
+              ),
+              child: logo.isEmpty
+                  ? const Icon(
+                      Icons.local_hospital,
+                      color: Color(0xFF2E7D32),
+                      size: 45,
+                    )
+                  : null,
+            ),
+            const SizedBox(height: 16),
+            // Hospital Name
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              child: Text(
+                name,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            if (category.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                category,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ],
+            const SizedBox(height: 10),
+            // KYC Badge
+            GestureDetector(
+              onTap: _showKYCEditDialog,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                decoration: BoxDecoration(
+                  color: isKYCVerified
+                      ? Colors.white.withValues(alpha: 0.25)
+                      : Colors.orange.withValues(alpha: 0.3),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isKYCVerified 
+                        ? Colors.white.withValues(alpha: 0.5)
+                        : Colors.orange.withValues(alpha: 0.5),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isKYCVerified ? Icons.verified : Icons.pending,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      isKYCVerified ? 'KYC Verified' : 'Pending Verification',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.white.withValues(alpha: 0.95),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.edit,
+                      size: 16,
+                      color: Colors.white.withValues(alpha: 0.8),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            // Bottom spacing to prevent overflow
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              Icons.error_outline,
+              size: 60,
+              color: Colors.red.shade300,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              _errorMessage ?? 'An error occurred',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 16,
+                color: Colors.grey.shade700,
+              ),
+            ),
+            const SizedBox(height: 20),
+            ElevatedButton.icon(
+              onPressed: _loadProfileDetails,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF2E7D32),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 12,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildProfileDetails() {
+    final email = _profileData['email'] ?? '';
+    final phone = _profileData['phoneNumber'] ?? '';
+    final location = _profileData['location'] ?? '';
+    final overview = _profileData['hospitalOverview'] ?? '';
+    final website = _profileData['hospitalWebsite'] ?? '';
+    final departments = _profileData['departmentsAvailable'] ?? [];
+    final hrContact = _profileData['hrContact'];
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Contact Information Card
+          _buildSectionCard(
+            title: 'Contact Information',
+            icon: Icons.contact_phone,
+            iconColor: const Color(0xFF2E7D32),
+            children: [
+              if (email.isNotEmpty)
+                _buildInfoRow(Icons.email_outlined, 'Email', email),
+              if (phone.toString().isNotEmpty)
+                _buildInfoRow(Icons.phone_outlined, 'Phone', phone.toString()),
+              if (location.isNotEmpty)
+                _buildInfoRow(Icons.location_on_outlined, 'Location', location),
+              if (website.isNotEmpty)
+                _buildInfoRow(Icons.language_outlined, 'Website', website),
+            ],
+          ),
+          const SizedBox(height: 16),
+
+          // Departments Card
+          if (departments is List && departments.isNotEmpty) ...[
+            _buildSectionCard(
+              title: 'Departments Available',
+              icon: Icons.medical_services,
+              iconColor: const Color(0xFF1976D2),
+              children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: departments.map<Widget>((dept) {
+                    return Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1976D2).withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0xFF1E3A5F).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        dept.toString(),
+                        style: const TextStyle(
+                          fontSize: 13,
+                          color: Color(0xFF1976D2),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Hospital Overview Card
+          if (overview.isNotEmpty) ...[
+            _buildSectionCard(
+              title: 'Hospital Overview',
+              icon: Icons.info_outline,
+              iconColor: const Color(0xFF7B1FA2),
+              children: [
+                Text(
+                  overview,
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: Colors.grey.shade700,
+                    height: 1.6,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // HR Contact Card
+          if (hrContact != null && hrContact is Map) ...[
+            _buildSectionCard(
+              title: 'HR Contact',
+              icon: Icons.person_outline,
+              iconColor: const Color(0xFFE65100),
+              children: [
+                if ((hrContact['fullName'] ?? '').toString().isNotEmpty)
+                  _buildInfoRow(Icons.person, 'Name', hrContact['fullName']),
+                if ((hrContact['designation'] ?? '').toString().isNotEmpty)
+                  _buildInfoRow(Icons.badge_outlined, 'Designation', hrContact['designation']),
+                if ((hrContact['mobileNumber'] ?? '').toString().isNotEmpty)
+                  _buildInfoRow(Icons.phone_outlined, 'Mobile', hrContact['mobileNumber']),
+                if ((hrContact['email'] ?? '').toString().isNotEmpty)
+                  _buildInfoRow(Icons.email_outlined, 'Email', hrContact['email']),
+              ],
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Account Information Card
+          _buildSectionCard(
+            title: 'Account & Payment Information',
+            icon: Icons.settings_outlined,
+            iconColor: Colors.grey.shade600,
+            children: [
+              _buildInfoRow(
+                Icons.verified_user_outlined,
+                'KYC Status',
+                _profileData['isKYCVerified'] == true ? 'Verified' : 'Pending Verification',
+              ),
+              _buildInfoRow(
+                Icons.payments_outlined,
+                'Payment Status',
+                _profileData['isSubscribed'] == true
+                    ? 'Payment Received (₹1500) - Active'
+                    : 'Payment Pending (₹1500)',
+              ),
+              if (_profileData['subscriptionEndDate'] != null)
+                _buildInfoRow(
+                  Icons.event_available,
+                  'Active Until',
+                  _formatDate(_profileData['subscriptionEndDate']),
+                ),
+              _buildInfoRow(
+                Icons.currency_rupee,
+                'Plan Price',
+                '₹1,500 / Month',
+              ),
+              if (_profileData['createdAt'] != null)
+                _buildInfoRow(Icons.calendar_today_outlined, 'Registered On', _formatDate(_profileData['createdAt'])),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _showKYCEditDialog,
+                      icon: Icon(
+                        _profileData['isKYCVerified'] == true ? Icons.verified : Icons.pending,
+                        size: 16,
+                        color: _profileData['isKYCVerified'] == true ? Colors.green : Colors.orange,
+                      ),
+                      label: Text(
+                        _profileData['isKYCVerified'] == true ? 'KYC Verified' : 'Verify KYC',
+                        style: TextStyle(
+                          color: _profileData['isKYCVerified'] == true ? Colors.green : Colors.orange,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: _isUpdatingPayment ? null : _showCollectPaymentDialog,
+                      icon: _isUpdatingPayment
+                          ? const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                            )
+                          : const Icon(Icons.check_circle_outline, size: 16, color: Colors.white),
+                      label: Text(
+                        _profileData['isSubscribed'] == true ? 'Extend (₹1500)' : 'Collect ₹1500',
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF2E7D32),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(dynamic date) {
+    if (date == null) return '';
+    try {
+      final dt = DateTime.parse(date.toString());
+      return '${dt.day}/${dt.month}/${dt.year}';
+    } catch (_) {
+      return date.toString();
+    }
+  }
+
+  Widget _buildSectionCard({
+    required String title,
+    required IconData icon,
+    required Color iconColor,
+    required List<Widget> children,
+  }) {
+    final filteredChildren = children.where((w) => w is! SizedBox || w.height != 0).toList();
+
+    if (filteredChildren.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E3A5F),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...filteredChildren,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    if (value.isEmpty) return const SizedBox.shrink();
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            icon,
+            size: 20,
+            color: Colors.grey.shade500,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: const Color(0xFF1E3A5F).withValues(alpha: 0.1),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  value,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    color: Color(0xFF1E3A5F),
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}

@@ -1,0 +1,102 @@
+class DoctorProfileData {
+  final String name;
+  final String speciality;
+  final String summary;
+  final String degree;
+  final String subSpeciality;
+  final String designation;
+  final String organization;
+  final String period;
+  final String workLocation;
+  final String phone;
+  final String email;
+  final String location;
+  final String portfolio;
+  final String profilePicture;
+  final String state;
+  final String district;
+  final String cv;
+  final String highestDegree;
+  final String logBook;
+  final String surgicalExperience;
+
+  DoctorProfileData({
+    required this.name,
+    required this.speciality,
+    required this.summary,
+    required this.degree,
+    required this.subSpeciality,
+    required this.designation,
+    required this.organization,
+    required this.period,
+    required this.workLocation,
+    required this.phone,
+    required this.email,
+    required this.location,
+    required this.portfolio,
+    required this.profilePicture,
+    this.state = '',
+    this.district = '',
+    this.cv = '',
+    this.highestDegree = '',
+    this.logBook = '',
+    this.surgicalExperience = '',
+  });
+
+  factory DoctorProfileData.fromMap(Map<String, dynamic> data) {
+    // Handle nested data structures
+    final profile = data['data'] is Map ? data['data'] : data;
+    final profileData = profile['profile'] is Map ? profile['profile'] : profile;
+    
+    // Extract work experience for designation, organization, etc.
+    String designation = '';
+    String organization = '';
+    String period = '';
+    String workLocation = '';
+    
+    if (profileData['workExperience'] is List && (profileData['workExperience'] as List).isNotEmpty) {
+      final firstExp = (profileData['workExperience'] as List).first;
+      if (firstExp is Map) {
+        designation = firstExp['designation']?.toString() ?? '';
+        organization = firstExp['healthcareOrganization']?.toString() ?? firstExp['organization']?.toString() ?? '';
+        final from = firstExp['from']?.toString() ?? '';
+        final to = firstExp['to']?.toString() ?? '';
+        period = from.isNotEmpty && to.isNotEmpty ? '$from - $to' : '';
+        workLocation = firstExp['location']?.toString() ?? '';
+      }
+    }
+
+    return DoctorProfileData(
+      name: profileData['fullName']?.toString() ?? profileData['fullname']?.toString() ?? '',
+      speciality: profileData['speciality']?.toString() ?? '',
+      summary: profileData['summaryProfile']?.toString() ??
+          profileData['summary']?.toString() ??
+          profileData['summary_profile']?.toString() ??
+          profileData['about']?.toString() ??
+          '',
+      degree: profileData['degree']?.toString() ?? '',
+      subSpeciality: profileData['subSpeciality']?.toString() ?? '',
+      designation: designation,
+      organization: organization,
+      period: period.isNotEmpty ? period : (profileData['yearsOfExperience']?.toString() ?? ''),
+      workLocation: workLocation,
+
+      phone: profileData['phoneNumber']?.toString() ?? 
+             profileData['phone']?.toString() ?? 
+             profileData['mobile']?.toString() ?? 
+             profileData['mobileNumber']?.toString() ?? 
+             profileData['mobilenumber']?.toString() ?? 
+             '',
+      email: profileData['email']?.toString() ?? '',
+      location: profileData['location']?.toString() ?? '',
+      state: profileData['state']?.toString() ?? '',
+      district: profileData['district']?.toString() ?? '',
+      portfolio: profileData['portfolioLinks']?.toString() ?? '',
+      profilePicture: profileData['profilePicture']?.toString() ?? '',
+      cv: profileData['cv']?.toString() ?? '',
+      highestDegree: profileData['highestDegree']?.toString() ?? '',
+      logBook: profileData['uploadLogBook']?.toString() ?? '',
+      surgicalExperience: profileData['surgicalExperience']?.toString() ?? '',
+    );
+  }
+}
