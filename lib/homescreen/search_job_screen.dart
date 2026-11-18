@@ -10,7 +10,7 @@ import 'package:doc/utils/session_manager.dart';
 import 'package:doc/utils/subscription_guard.dart';
 import 'package:doc/homescreen/job_details_screen.dart';
 import 'package:doc/homescreen/applied_jobs.dart';
-import 'package:doc/admin/surgeon_tab.dart';
+// import 'package:doc/admin/surgeon_tab.dart';
 import '../utils/colors.dart';
 import '../widgets/job_card.dart';
 import '../widgets/section_header.dart';
@@ -493,6 +493,7 @@ class _SearchScreenState extends State<SearchScreen> {
               mainAxisAlignment: MainAxisAlignment.spaceAround,
               children: [
                 _bottomNavItem(Iconsax.search_normal, "Search", true, () {}),
+                /*
                 _bottomNavItem(Icons.medical_services_outlined, "Surgeons", false, () {
                   Navigator.push(
                     context,
@@ -501,6 +502,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     ),
                   );
                 }),
+                */
                 _bottomNavItem(Iconsax.document, "Applied Jobs", false, () {
                   Navigator.pushReplacement(
                     context,
