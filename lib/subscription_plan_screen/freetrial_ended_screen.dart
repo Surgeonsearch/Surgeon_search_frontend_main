@@ -318,7 +318,8 @@ class _FreeTrialEndedScreenState extends State<FreeTrialEndedScreen> {
 
                   // Title
                   const Text(
-                    "Your 1-Month Free Trial Has Ended!",
+                    // "Your 1-Month Free Trial Has Ended!",
+                    "Your Free Trial Has Ended",
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       color: Color(0xFF005BD4),

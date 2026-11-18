@@ -10,7 +10,8 @@ import 'package:doc/screens/signin_screen.dart';
 import 'package:doc/homescreen/search_job_screen.dart';
 import 'package:doc/homescreen/applied_jobs.dart';
 import 'package:doc/profileprofile/surgeon_form.dart';
-import 'package:doc/admin/surgeon_tab.dart';
+import 'package:doc/subscription_plan_screen/freetrial_ended_screen.dart';
+// import 'package:doc/admin/surgeon_tab.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:doc/controllers/auth_controller.dart';
 import 'package:get/get.dart';
@@ -590,6 +591,7 @@ class _ProfessionalProfileViewPageState
                     );
                   },
                 ),
+                /*
                 _bottomNavItem(
                   Icons.medical_services_outlined,
                   "Surgeons",
@@ -603,6 +605,7 @@ class _ProfessionalProfileViewPageState
                     );
                   },
                 ),
+                */
                 _bottomNavItem(
                   Iconsax.document,
                   "Applied Jobs",
@@ -612,6 +615,19 @@ class _ProfessionalProfileViewPageState
                       context,
                       MaterialPageRoute(
                         builder: (_) => const AppliedJobsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                _bottomNavItem(
+                  Icons.payment,
+                  "Subscription",
+                  false,
+                  () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const FreeTrialEndedScreen(),
                       ),
                     );
                   },

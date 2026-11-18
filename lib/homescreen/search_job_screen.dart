@@ -8,6 +8,7 @@ import 'package:doc/utils/app_config.dart';
 import 'package:doc/profileprofile/surgeon_profile.dart';
 import 'package:doc/utils/session_manager.dart';
 import 'package:doc/utils/subscription_guard.dart';
+import 'package:doc/subscription_plan_screen/freetrial_ended_screen.dart';
 import 'package:doc/homescreen/job_details_screen.dart';
 import 'package:doc/homescreen/applied_jobs.dart';
 // import 'package:doc/admin/surgeon_tab.dart';
@@ -508,6 +509,14 @@ class _SearchScreenState extends State<SearchScreen> {
                     context,
                     MaterialPageRoute(
                       builder: (_) => const AppliedJobsScreen(),
+                    ),
+                  );
+                }),
+                _bottomNavItem(Icons.payment, "Subscription", false, () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const FreeTrialEndedScreen(),
                     ),
                   );
                 }),

@@ -9,7 +9,8 @@ import 'package:doc/utils/session_manager.dart';
 import 'package:doc/homescreen/search_job_screen.dart';
 import 'package:doc/profileprofile/surgeon_profile.dart';
 import 'package:doc/homescreen/applied_job_details_screen.dart';
-import 'package:doc/admin/surgeon_tab.dart';
+import 'package:doc/subscription_plan_screen/freetrial_ended_screen.dart';
+// import 'package:doc/admin/surgeon_tab.dart';
 
 class AppliedJobsScreen extends StatefulWidget {
   const AppliedJobsScreen({super.key});
@@ -582,6 +583,7 @@ class _AppliedJobsScreenState extends State<AppliedJobsScreen> {
                   ),
                 );
               }),
+              /*
               _navItem(Icons.medical_services_outlined, "Surgeons", false, () {
                 Navigator.push(
                   context,
@@ -590,7 +592,16 @@ class _AppliedJobsScreenState extends State<AppliedJobsScreen> {
                   ),
                 );
               }),
+              */
               _navItem(Iconsax.document, "Applied Jobs", true, () {}),
+              _navItem(Icons.payment, "Subscription", false, () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const FreeTrialEndedScreen(),
+                  ),
+                );
+              }),
               _navItem(Iconsax.user, "Profile", false, () async {
                 final messenger = ScaffoldMessenger.of(context);
                 final navigator = Navigator.of(context);
